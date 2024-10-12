@@ -1,6 +1,7 @@
 package com.lannooo.audiocenter.audio;
 
 import android.content.Context;
+import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.media.MediaRecorder;
 import android.util.Log;
@@ -8,11 +9,14 @@ import android.util.Log;
 import com.lannooo.audiocenter.tool.AppUtil;
 
 import java.io.File;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.channel.ChannelHandlerContext;
 import io.netty.util.internal.StringUtil;
 
-public abstract class AbstractAudioHandler implements AudioRecorder {
+public abstract class AbstractAudioHandler {
     private static final String TAG = "AudioHandler";
 
     protected final Context context;
@@ -21,6 +25,7 @@ public abstract class AbstractAudioHandler implements AudioRecorder {
     protected final boolean supportUnprocess;
     protected final File baseDir;
     protected AudioRecorder recorder;
+    protected AudioPlayer player;
 
     public AbstractAudioHandler(Context context, ExecutorService executor) {
         this.context = context;
@@ -33,11 +38,22 @@ public abstract class AbstractAudioHandler implements AudioRecorder {
         this.baseDir = getRecordingBaseDir();
     }
 
-    public abstract void configure(String outputFile,
-                                   int duration,
-                                   boolean enableProcess,
-                                   boolean isCustom,
-                                   AudioEventListener listener);
+    public abstract void configureRecorder(String outputFile,
+                                           int duration,
+                                           boolean enableProcess,
+                                           boolean isCustom,
+                                           AudioEventListener listener);
+
+
+    public abstract void configurePlayer(String inputFile,
+                                         String type,
+                                         boolean enableLoop,
+                                         AudioEventListener listener);
+
+
+    public abstract UploadingFileItem writeUploadingFile(ChannelHandlerContext ctx, ByteBuf buf);
+
+    public abstract void addUploadingFile(ChannelHandlerContext ctx, Map<String, Object> data);
 
     public File getBaseDir() {
         return baseDir;
@@ -65,31 +81,68 @@ public abstract class AbstractAudioHandler implements AudioRecorder {
         return audioSource;
     }
 
-    @Override
-    public void start() {
+    protected int getAudioContentType(String type) {
+        int contentType;
+        switch (type) {
+            case "music":
+                contentType = AudioAttributes.CONTENT_TYPE_MUSIC;
+                break;
+            case "voice":
+                contentType = AudioAttributes.CONTENT_TYPE_SPEECH;
+                break;
+            default:
+                Log.w(TAG, "Unknown audio content type: " + type);
+                contentType = AudioAttributes.CONTENT_TYPE_UNKNOWN;
+                break;
+        }
+        return contentType;
+    }
+
+    public void startRecorder() {
         if (recorder != null) {
             recorder.start();
         }
     }
 
-    @Override
-    public void stop() {
+    public void stopRecorder() {
         if (recorder != null) {
             recorder.stop();
         }
     }
 
-    @Override
-    public void pause() {
+    public void pauseRecorder() {
         if (recorder != null) {
             recorder.pause();
         }
     }
 
-    @Override
-    public void resume() {
+    public void resumeRecorder() {
         if (recorder != null) {
             recorder.resume();
+        }
+    }
+
+    public void startPlayer() {
+        if (player != null) {
+            player.start();
+        }
+    }
+
+    public void stopPlayer() {
+        if (player != null) {
+            player.stop();
+        }
+    }
+
+    public void pausePlayer() {
+        if (player != null) {
+            player.pause();
+        }
+    }
+
+    public void resumePlayer() {
+        if (player != null) {
+            player.resume();
         }
     }
 }

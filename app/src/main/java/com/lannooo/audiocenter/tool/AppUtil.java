@@ -6,9 +6,16 @@ import android.os.Environment;
 import android.util.Log;
 
 import java.io.File;
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+
+import io.netty.channel.Channel;
 
 public class AppUtil {
     private static final String TAG = "AppUtil";
@@ -26,6 +33,37 @@ public class AppUtil {
     public static boolean isExternalStorageReadable() {
         return Environment.getExternalStorageState().equals(Environment.MEDIA_MOUNTED) ||
                 Environment.getExternalStorageState().equals(Environment.MEDIA_MOUNTED_READ_ONLY);
+    }
+
+    public static String parseAddress(Channel channel, boolean isRemote, boolean includePort) {
+        SocketAddress socketAddress = isRemote ? channel.remoteAddress() : channel.localAddress();
+        if (socketAddress instanceof InetSocketAddress) {
+            InetSocketAddress inetAddress = (InetSocketAddress) socketAddress;
+            if (includePort) {
+                return inetAddress.getHostString() + ":" + inetAddress.getPort();
+            } else {
+                return inetAddress.getHostString();
+            }
+        } else {
+            return socketAddress.toString();
+        }
+    }
+
+    public static String sha1Hex(String input, int length) {
+        // generate a MD5 hash key
+        MessageDigest sha;
+        try {
+            sha = MessageDigest.getInstance("SHA-1");
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);
+        }
+        byte[] digest = sha.digest(input.getBytes(StandardCharsets.UTF_8));
+        // convert the bytes to hex format string
+        StringBuilder hexString = new StringBuilder();
+        for (byte b : digest) {
+            hexString.append(String.format("%02x", b));
+        }
+        return hexString.substring(0, length);
     }
 
     public static File getAppRecordingDir(Context context) {

@@ -4,8 +4,10 @@ import static com.lannooo.audiocenter.tool.MessageUtil.fileUploadRequest;
 
 import android.util.Log;
 
-import com.lannooo.audiocenter.audio.AbstractAudioHandler;
 import com.lannooo.audiocenter.audio.AudioEventListener;
+import com.lannooo.audiocenter.audio.ClientAudioHandler;
+import com.lannooo.audiocenter.audio.UploadingFileItem;
+import com.lannooo.audiocenter.tool.AppUtil;
 
 import java.io.File;
 import java.io.IOException;
@@ -20,6 +22,7 @@ import java.util.concurrent.ExecutorService;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
@@ -28,14 +31,16 @@ import io.netty.handler.stream.ChunkedNioFile;
 public class ClientHandler extends SimpleChannelInboundHandler<Message> {
     public static final String TAG = "ClientHandler";
 
-    private final AbstractAudioHandler audioHandler;
+    private final ClientAudioHandler audioHandler;
     private final MessageListener listener;
 
     private final Map<String, RequestHandler> requestHandlers;
     private final ExecutorService executor;
+    private final ClientService clientService;
 
     public ClientHandler(ClientService clientService) {
         super();
+        this.clientService = clientService;
         this.audioHandler = clientService.getAudioHandler();
         this.listener = clientService.getListener();
         this.executor = clientService.getExecutor();
@@ -45,6 +50,9 @@ public class ClientHandler extends SimpleChannelInboundHandler<Message> {
     private Map<String, RequestHandler> registerHandlers() {
         Map<String, RequestHandler> handles = new HashMap<>();
         handles.put("capture", this::handleCaptureRequest);
+        handles.put("playback", this::handlePlaybackRequest);
+        handles.put("download", this::handleDownloadFileRequest);
+        handles.put("upload", this::handleUploadFileRequest);
         handles.put("delete", this::handleFileDeleteRequest);
         handles.put("list", this::handleFileListRequest);
         // TODO more commands
@@ -57,7 +65,7 @@ public class ClientHandler extends SimpleChannelInboundHandler<Message> {
 
         // Message read from server should be displayed to UI if listener is set
         if (listener != null) {
-            listener.onMessageReceived(false, msg.getType(), new String(msg.getPayload()));
+            listener.onMessageReceived(false, msg.getType(), msg.toString());
         }
 
         if (msg.getType() == Message.MessageType.REQUEST) {
@@ -71,18 +79,35 @@ public class ClientHandler extends SimpleChannelInboundHandler<Message> {
                 Log.e(TAG, "No handler found for " + request.getSubtype());
                 writeShortResponse(ctx, "Oops!");
             }
+            clientService.updateRequestTime();
+        } else if (msg.getType() == Message.MessageType.DATA_TRANSFER) {
+            byte[] payload = msg.getPayload();
+            ByteBuf buf = Unpooled.wrappedBuffer(payload);
+            UploadingFileItem fileItem = audioHandler.writeUploadingFile(ctx, buf);
+            if (fileItem != null) {
+                if (fileItem.isFinished()) {
+                    writeShortResponse(ctx, "File uploaded");
+                } else if (fileItem.isFailed()) {
+                    writeShortResponse(ctx, "File upload failed");
+                }
+            }
         }
     }
 
     @Override
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
         super.channelActive(ctx);
+        audioHandler.cacheServerChannel(ctx);
+        clientService.acquireWakeLock();
+        clientService.updateRequestTime();
         Log.i(TAG, "Server connected");
     }
 
     @Override
     public void channelInactive(ChannelHandlerContext ctx) throws Exception {
         super.channelInactive(ctx);
+        audioHandler.clearServerChannel();
+        clientService.releaseWakeLock();
         Log.i(TAG, "Server disconnected");
     }
 
@@ -116,6 +141,40 @@ public class ClientHandler extends SimpleChannelInboundHandler<Message> {
         }
     }
 
+    private void handlePlaybackRequest(ChannelHandlerContext ctx, MessageRequest request) {
+        Map<String, Object> commands = request.getData();
+        String action = (String) commands.get("action");
+        if ("start".equalsIgnoreCase(action)) {
+            String playFile = (String) Objects.requireNonNull(commands.get("input"));
+            String mode = (String) Objects.requireNonNull(commands.get("mode"));
+            boolean loop = (boolean) Objects.requireNonNull(commands.get("loop"));
+
+            audioHandler.configurePlayer(playFile, mode, loop, new AudioEventListener() {
+                @Override
+                public void onPlaybackStop() {
+                    if (!loop) {
+                        // if not looping forever, it is stopped by it self
+                        // so send a message to client after done, or the user cannot receive response
+                        writeShortResponse(ctx, "Stopped");
+                    }
+                }
+            });
+            audioHandler.startPlayer();
+            writeShortResponse(ctx, "Started");
+        } else if ("stop".equalsIgnoreCase(action)) {
+            audioHandler.stopPlayer();
+            writeShortResponse(ctx, "Stopped");
+        } else if ("pause".equalsIgnoreCase(action)) {
+            audioHandler.pausePlayer();
+            writeShortResponse(ctx, "Paused");
+        } else if ("resume".equalsIgnoreCase(action)) {
+            audioHandler.resumePlayer();
+            writeShortResponse(ctx, "Resumed");
+        } else {
+            writeShortResponse(ctx, "Oops! Invalid action");
+        }
+    }
+
     private void handleCaptureRequest(ChannelHandlerContext ctx, MessageRequest request) {
         Map<String, Object> commands = request.getData();
         String action = (String) commands.get("action");
@@ -142,7 +201,7 @@ public class ClientHandler extends SimpleChannelInboundHandler<Message> {
             }
 
             // configure audio handler according to the mode and more extra parameters
-            audioHandler.configure(outputName, (int) duration, process, isCustom,
+            audioHandler.configureRecorder(outputName, (int) duration, process, isCustom,
                     new AudioEventListener() {
                         @Override
                         public void onRecordStart() {
@@ -151,7 +210,7 @@ public class ClientHandler extends SimpleChannelInboundHandler<Message> {
                                     try {
                                         Thread.sleep((long) (duration * 1000));
                                         Log.i(TAG, "Recording stopped automatically by duration limit: " + duration);
-                                        audioHandler.stop();
+                                        audioHandler.stopRecorder();
                                     } catch (InterruptedException e) {
                                         Log.e(TAG, "Sleep interrupted", e);
                                     }
@@ -163,24 +222,56 @@ public class ClientHandler extends SimpleChannelInboundHandler<Message> {
                         public void onRecordStop(File outputFile) {
                             if (forward) {
                                 // handle file forward (transfer) to server
-                                executor.submit(() -> uploadFileByChunk(ctx, outputFile, postDelete));
+                                executor.submit(() -> {
+                                    try {
+                                        uploadFileByChunk(ctx, outputFile, postDelete);
+                                    } catch (Exception e) {
+                                        Log.e(TAG, "Error while forwarding file: " + e.getMessage(), e);
+                                    }
+                                });
                             }
                         }
                     });
 
-            audioHandler.start();
+            audioHandler.startRecorder();
             writeShortResponse(ctx, "Started");
         } else if ("stop".equalsIgnoreCase(action)) {
-            audioHandler.stop();
+            audioHandler.stopRecorder();
             writeShortResponse(ctx, "Stopped");
         } else if ("pause".equalsIgnoreCase(action)) {
-            audioHandler.pause();
+            audioHandler.pauseRecorder();
             writeShortResponse(ctx, "Paused");
         } else if ("resume".equalsIgnoreCase(action)) {
-            audioHandler.resume();
+            audioHandler.resumeRecorder();
             writeShortResponse(ctx, "Resumed");
         } else {
             writeShortResponse(ctx, "Oops! Invalid action");
+        }
+    }
+
+    private void handleUploadFileRequest(ChannelHandlerContext ctx, MessageRequest request) {
+        // add file upload elements, receive data from DataTransfer Type Message
+        Map<String, Object> data = request.getData();
+        audioHandler.addUploadingFile(ctx, data);
+        writeShortResponse(ctx, "Ready to receive chunks");
+    }
+
+    private void handleDownloadFileRequest(ChannelHandlerContext ctx, MessageRequest request) {
+        Map<String, Object> commands = request.getData();
+        String path = (String) Objects.requireNonNull(commands.get("file"));
+        boolean postDelete = (boolean) Objects.requireNonNull(commands.get("delete"));
+        Path filepath = audioHandler.getBaseDir().toPath().resolve(path);
+
+        if (Files.exists(filepath)) {
+            executor.submit(() -> {
+                try {
+                    uploadFileByChunk(ctx, filepath.toFile(), postDelete);
+                } catch (Exception e) {
+                    Log.e(TAG, "Error while uploading file: " + e.getMessage(), e);
+                }
+            });
+        } else {
+            writeShortResponse(ctx, "Not found");
         }
     }
 

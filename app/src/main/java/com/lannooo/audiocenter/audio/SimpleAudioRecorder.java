@@ -1,6 +1,5 @@
 package com.lannooo.audiocenter.audio;
 
-import android.content.Context;
 import android.media.MediaRecorder;
 import android.os.Build;
 import android.util.Log;
@@ -12,7 +11,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public class SimpleAudioRecorder implements AudioRecorder {
     private static final String TAG = "SimpleAudioRecorder";
 
-    private final AbstractAudioHandler audioContext;
+    private final ClientAudioHandler audioHandler;
     private final File outputFile;
     private final int audioSource;
     private final int durationMs;
@@ -28,11 +27,11 @@ public class SimpleAudioRecorder implements AudioRecorder {
     private final AtomicReference<RecorderStatus> status = new AtomicReference<>(RecorderStatus.INIT);
     private AudioEventListener listener;
 
-    public SimpleAudioRecorder(AbstractAudioHandler audioContext,
+    public SimpleAudioRecorder(ClientAudioHandler audioHandler,
                                File file,
                                int audioSource,
                                int durationMs) {
-        this.audioContext = audioContext;
+        this.audioHandler = audioHandler;
         this.outputFile = file;
         this.audioSource = audioSource;
         this.durationMs = durationMs;
@@ -52,8 +51,8 @@ public class SimpleAudioRecorder implements AudioRecorder {
 
         // check permission of audio recording
 
-        if (audioContext.context != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            mediaRecorder = new MediaRecorder(audioContext.context);
+        if (audioHandler.context != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            mediaRecorder = new MediaRecorder(audioHandler.context);
         } else {
             mediaRecorder = new MediaRecorder();
         }
@@ -109,13 +108,16 @@ public class SimpleAudioRecorder implements AudioRecorder {
 
     @Override
     public void stop() {
-        if (status.get() != RecorderStatus.RECORDING || status.get() != RecorderStatus.PAUSED) {
-            Log.w(TAG, "Recorder is not recording!");
+        if (status.get() == RecorderStatus.STOPPED) {
+            Log.w(TAG, "Recorder already stopped!");
             return;
         }
 
         try {
-            mediaRecorder.stop();
+            if (status.get() == RecorderStatus.RECORDING ||
+                    status.get() == RecorderStatus.PAUSED) {
+                mediaRecorder.stop();
+            }
         } catch (IllegalStateException e) {
             Log.e(TAG, "Illegal state when stopping MediaRecorder", e);
             throw e;

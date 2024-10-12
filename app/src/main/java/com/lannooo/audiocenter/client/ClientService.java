@@ -1,6 +1,7 @@
 package com.lannooo.audiocenter.client;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -10,9 +11,11 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.graphics.Color;
+import android.net.wifi.WifiManager;
 import android.os.Binder;
 import android.os.Build;
 import android.os.IBinder;
+import android.os.PowerManager;
 import android.util.Log;
 
 import androidx.annotation.Nullable;
@@ -26,10 +29,12 @@ import com.lannooo.audiocenter.tool.MessageUtil;
 import java.net.InetSocketAddress;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.ChannelPipeline;
@@ -37,16 +42,16 @@ import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
-import io.netty.util.concurrent.Future;
-import io.netty.util.concurrent.GenericFutureListener;
 
 public class ClientService extends Service {
     public static final String TAG = "ClientService";
+    public static final long WAKELOCK_INTERVAL_MILLI = 10 * 6 * 1000L;
 
     private final IBinder binder = new ClientBinder();
 
-    // for other IO operations
+    // for other IO operations & periodical tasks
     private ExecutorService executor;
+    private ScheduledExecutorService scheduledExecutor;
 
     // for configure and manage Netty client
     private Bootstrap bootstrap;
@@ -61,6 +66,11 @@ public class ClientService extends Service {
 
     // for Audio Recording
     private ClientAudioHandler audioHandler;
+
+    // for keeping CPU and Wifi awake
+    private PowerManager.WakeLock wakeLock;
+    private WifiManager.WifiLock wifiLock;
+    private volatile long lastRequestTime;
 
     public ClientAudioHandler getAudioHandler() {
         return audioHandler;
@@ -115,7 +125,7 @@ public class ClientService extends Service {
     public void onDestroy() {
         // TODO release related resources
         if (audioHandler != null) {
-            audioHandler.stop();
+            audioHandler.stopRecorder();
         }
         if (executor != null) {
             executor.shutdown();
@@ -126,6 +136,7 @@ public class ClientService extends Service {
             // ignore this
             Log.e(TAG, "Client channel closing failed: " + e.getMessage());
         }
+        releaseWakeLock();
     }
 
     private void initTaskExecutor() {
@@ -155,29 +166,25 @@ public class ClientService extends Service {
 
     private void startForegroundWithNotification() {
         Notification notification;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            String channelName = "Tcp Client Service";
-            String channelId = getPackageName();
-            NotificationChannel channel = new NotificationChannel(channelId, channelName,
-                    NotificationManager.IMPORTANCE_DEFAULT);
-            channel.setLightColor(Color.BLUE);
-            channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
-            NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-            manager.createNotificationChannel(channel);
+        String channelName = "Tcp Client Service";
+        String channelId = getPackageName();
+        NotificationChannel channel = new NotificationChannel(channelId, channelName,
+                NotificationManager.IMPORTANCE_DEFAULT);
+        channel.setLightColor(Color.BLUE);
+        channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
+        NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        manager.createNotificationChannel(channel);
 
-            notification = new NotificationCompat.Builder(this, channelId)
-                    .setOngoing(true)
-                    .setSmallIcon(R.mipmap.ic_launcher_round)
-                    .setContentTitle("Tcp Client Service")
-                    .setContentText("Tcp Client Service is running in the foreground")
-                    .setPriority(NotificationManager.IMPORTANCE_DEFAULT)
-                    .setCategory(Notification.CATEGORY_SERVICE)
-                    .build();
+        notification = new NotificationCompat.Builder(this, channelId)
+                .setOngoing(true)
+                .setSmallIcon(R.mipmap.ic_launcher_round)
+                .setContentTitle("Tcp Client Service")
+                .setContentText("Tcp Client Service is running in the foreground")
+                .setPriority(NotificationManager.IMPORTANCE_DEFAULT)
+                .setCategory(Notification.CATEGORY_SERVICE)
+                .build();
 
-        } else {
-            notification = new Notification();
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             int foregroundServiceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
                     | ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
                     | ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK;
@@ -216,6 +223,86 @@ public class ClientService extends Service {
         }
     }
 
+    public void updateRequestTime() {
+        // update the wakeLock timeout
+        lastRequestTime = System.currentTimeMillis();
+//        if (!wakeLock.isHeld()) {
+//            acquireWakeLock();
+//        }
+    }
+
+    @SuppressLint("WakelockTimeout")
+    public void acquireWakeLock() {
+        if (wakeLock == null) {
+            wakeLock = ((PowerManager) getSystemService(POWER_SERVICE))
+                    .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "AudioCenter::MyWakelockTag");
+            wakeLock.acquire();
+            Log.i(TAG, "WakeLock initialized and acquired");
+        } else {
+            if (!wakeLock.isHeld()) {
+                wakeLock.acquire();
+                Log.i(TAG, "WakeLock re-acquired");
+            }
+        }
+
+        if (wifiLock == null) {
+            wifiLock = ((WifiManager) getSystemService(WIFI_SERVICE))
+                    .createWifiLock(WifiManager.WIFI_MODE_FULL, "AudioCenter::MyWifiLockTag");
+            wifiLock.acquire();
+            Log.i(TAG, "WifiLock initialized and acquired");
+        } else {
+            if (!wifiLock.isHeld()) {
+                wifiLock.acquire();
+                Log.i(TAG, "WifiLock re-acquired");
+            }
+        }
+        // only hold a small time
+//        wakeLock.acquire(WAKELOCK_INTERVAL_MILLI);
+        // check the wakelock state, if condition is not met, re-acquire the wakelock
+//        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+//            wakeLock.setStateListener(executor, enabled -> {
+//                Log.d(TAG, "WakeLock state changed: " + enabled);
+//                // re-acquire the wake lock if there is request recently
+//                long current = System.currentTimeMillis();
+//                if (!enabled && (current - lastRequestTime < WAKELOCK_INTERVAL_MILLI)) {
+//                    wakeLock.acquire(WAKELOCK_INTERVAL_MILLI);
+//                }
+//            });
+//        } else {
+//            // schedule every 3 seconds to check the wakelock state, with Java concurrent library
+//            scheduledExecutor = Executors.newSingleThreadScheduledExecutor();
+//            scheduledExecutor.scheduleWithFixedDelay(() -> {
+//                Log.d(TAG, "WakeLock state: " + wakeLock.isHeld());
+//                long current = System.currentTimeMillis();
+//                // re-acquire the wake lock if there is request recently
+//                if (!wakeLock.isHeld() && (current - lastRequestTime < WAKELOCK_INTERVAL_MILLI)) {
+//                    wakeLock.acquire(WAKELOCK_INTERVAL_MILLI);
+//                }
+//            }, 0, 3, TimeUnit.SECONDS);
+//        }
+    }
+
+    public void releaseWakeLock() {
+//        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+//            wakeLock.setStateListener(executor, null); // ensure the listener is removed
+//        } else {
+//            if (scheduledExecutor != null) {
+//                scheduledExecutor.shutdown(); // stop the periodical checker & re-acquirer
+//                scheduledExecutor = null;
+//            }
+//        }
+        if (wakeLock != null) {
+            wakeLock.release();
+            wakeLock = null;
+            Log.i(TAG, "WakeLock released");
+        }
+        if (wifiLock != null) {
+            wifiLock.release();
+            wakeLock = null;
+            Log.i(TAG, "WifiLock released");
+        }
+    }
+
     private boolean isChannelReady() {
         return channel != null && channel.isActive();
     }
@@ -231,7 +318,7 @@ public class ClientService extends Service {
                 if (future.isSuccess()) {
                     Log.d(TAG, "Message send success");
                     if (listener != null) {
-                        listener.onMessageReceived(true, message.getType(), new String(message.getPayload()));
+                        listener.onMessageReceived(true, message.getType(), message.toString());
                     }
                 } else {
                     Log.e(TAG, "Message send failed: " + future.cause().getMessage());

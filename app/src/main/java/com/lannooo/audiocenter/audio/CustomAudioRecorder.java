@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 public class CustomAudioRecorder implements AudioRecorder {
     private static final String TAG = "CustomAudioRecorder";
-    private final AbstractAudioHandler audioContext;
+    private final ClientAudioHandler audioHandler;
     private final File outputFile;
     private final int audioSource;
     private final int encoding;
@@ -31,10 +31,10 @@ public class CustomAudioRecorder implements AudioRecorder {
     private final AtomicReference<RecorderStatus> status = new AtomicReference<>(RecorderStatus.INIT);
     private AudioEventListener listener;
 
-    public CustomAudioRecorder(AbstractAudioHandler audioContext,
+    public CustomAudioRecorder(ClientAudioHandler audioHandler,
                                File file,
                                int audioSource) {
-        this.audioContext = audioContext;
+        this.audioHandler = audioHandler;
         this.outputFile = file;
         this.audioSource = audioSource;
         this.encoding = AudioFormat.ENCODING_PCM_16BIT;
@@ -64,8 +64,8 @@ public class CustomAudioRecorder implements AudioRecorder {
             Log.w(TAG, "Recorder is already configured!");
             return;
         }
-
         AudioRecord.Builder builder = new AudioRecord.Builder();
+        // audioSource => MediaRecorder.AudioSource.UNPROCESSED/VOICE_RECOGNITION/MIC
         builder.setAudioSource(audioSource)
                 .setAudioFormat(new AudioFormat.Builder()
                         .setEncoding(encoding)
@@ -74,8 +74,8 @@ public class CustomAudioRecorder implements AudioRecorder {
                         .build())
                 .setBufferSizeInBytes(minBufferSize * 2);
 
-        if (audioContext.context != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            builder.setContext(audioContext.context);
+        if (audioHandler.context != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.setContext(audioHandler.context);
         }
         audioRecord = builder.build();
         status.set(RecorderStatus.READY);
@@ -95,7 +95,7 @@ public class CustomAudioRecorder implements AudioRecorder {
 
         audioRecord.startRecording();
         status.set(RecorderStatus.RECORDING);
-        audioContext.executor.submit(this::writeAudioData);
+        audioHandler.executor.submit(this::writeAudioData);
         if (listener != null) {
             listener.onRecordStart();
         }
