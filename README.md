@@ -21,6 +21,6 @@ The server side code could be found at [AudioCenter-Server](https://github.com/l
 5. The communication logs can be found in the log view
 
 
-UI: 
+### UI
+<img src="./resource/ui.jpg" width = "300" height = "600" align=center />
 
-![image](resource/ui.jpg|=100x200)
