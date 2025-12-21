@@ -92,7 +92,6 @@ public class CustomAudioRecorder implements AudioRecorder {
             throw new IllegalStateException("AudioRecord is not initialized!");
         }
 
-
         audioRecord.startRecording();
         status.set(RecorderStatus.RECORDING);
         audioHandler.executor.submit(this::writeAudioData);

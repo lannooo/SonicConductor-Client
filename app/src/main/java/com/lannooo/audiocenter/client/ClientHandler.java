@@ -8,6 +8,7 @@ import com.lannooo.audiocenter.audio.AudioEventListener;
 import com.lannooo.audiocenter.audio.ClientAudioHandler;
 import com.lannooo.audiocenter.audio.UploadingFileItem;
 import com.lannooo.audiocenter.tool.AppUtil;
+import com.lannooo.audiocenter.tool.HandlerUtil;
 
 import java.io.File;
 import java.io.IOException;
@@ -155,23 +156,23 @@ public class ClientHandler extends SimpleChannelInboundHandler<Message> {
                     if (!loop) {
                         // if not looping forever, it is stopped by it self
                         // so send a message to client after done, or the user cannot receive response
-                        writeShortResponse(ctx, "Stopped");
+                        writeShortResponse(ctx, "Stopped Playback: " + playFile);
                     }
                 }
             });
             audioHandler.startPlayer();
-            writeShortResponse(ctx, "Started");
+            writeShortResponse(ctx, "Started Playback: " + playFile);
         } else if ("stop".equalsIgnoreCase(action)) {
             audioHandler.stopPlayer();
-            writeShortResponse(ctx, "Stopped");
+            writeShortResponse(ctx, "Stopped Playback");
         } else if ("pause".equalsIgnoreCase(action)) {
             audioHandler.pausePlayer();
-            writeShortResponse(ctx, "Paused");
+            writeShortResponse(ctx, "Paused Playback");
         } else if ("resume".equalsIgnoreCase(action)) {
             audioHandler.resumePlayer();
-            writeShortResponse(ctx, "Resumed");
+            writeShortResponse(ctx, "Resumed Playback");
         } else {
-            writeShortResponse(ctx, "Oops! Invalid action");
+            writeShortResponse(ctx, "Oops! Invalid action for playback");
         }
     }
 
@@ -185,23 +186,15 @@ public class ClientHandler extends SimpleChannelInboundHandler<Message> {
             boolean process = (boolean) Objects.requireNonNull(commands.get("process"));
             boolean forward = (boolean) Objects.requireNonNull(commands.get("forward"));
             boolean postDelete = (boolean) Objects.requireNonNull(commands.get("delete"));
+            boolean enableUltra = (boolean) Objects.requireNonNull(commands.get("ultra"));
+
 
             boolean isCustom = !mode.equalsIgnoreCase("simple");
             // TODO what if it ends with other extensions? Need to transform it?
-            if (isCustom) {
-                if (!outputName.endsWith(".wav")) {
-                    // if outputName is not ended with .wav, append it
-                    outputName += ".wav";
-                }
-            } else {
-                if (!outputName.endsWith(".m4a")) {
-                    // if outputName is not ended with .m4a, append it
-                    outputName += ".m4a";
-                }
-            }
+            outputName = HandlerUtil.formatOutputWavFileName(outputName, isCustom ? "wav" : "m4a");
 
             // configure audio handler according to the mode and more extra parameters
-            audioHandler.configureRecorder(outputName, (int) duration, process, isCustom,
+            audioHandler.configureRecorder(outputName, (int) duration, process, isCustom, enableUltra,
                     new AudioEventListener() {
                         @Override
                         public void onRecordStart() {
@@ -234,18 +227,18 @@ public class ClientHandler extends SimpleChannelInboundHandler<Message> {
                     });
 
             audioHandler.startRecorder();
-            writeShortResponse(ctx, "Started");
+            writeShortResponse(ctx, "Started Recording: " + outputName);
         } else if ("stop".equalsIgnoreCase(action)) {
             audioHandler.stopRecorder();
-            writeShortResponse(ctx, "Stopped");
+            writeShortResponse(ctx, "Stopped Recording");
         } else if ("pause".equalsIgnoreCase(action)) {
             audioHandler.pauseRecorder();
-            writeShortResponse(ctx, "Paused");
+            writeShortResponse(ctx, "Paused Recording");
         } else if ("resume".equalsIgnoreCase(action)) {
             audioHandler.resumeRecorder();
-            writeShortResponse(ctx, "Resumed");
+            writeShortResponse(ctx, "Resumed Recording");
         } else {
-            writeShortResponse(ctx, "Oops! Invalid action");
+            writeShortResponse(ctx, "Oops! Invalid action for recording");
         }
     }
 

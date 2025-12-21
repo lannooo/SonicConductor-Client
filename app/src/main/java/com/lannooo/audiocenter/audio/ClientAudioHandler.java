@@ -32,11 +32,19 @@ public class ClientAudioHandler extends AbstractAudioHandler {
                                   int duration,
                                   boolean enableProcess,
                                   boolean isCustom,
+                                  boolean enableUltrasonic,
                                   AudioEventListener listener) {
         // UNPROCESSED and VOICE_RECOGNITION type audio sources do not
         // employ 'AGC' or 'Noise Suppression', while DEFAULT or MIC do.
         int audioSource = getAudioSource(enableProcess);
         int durationMs = (duration == -1) ? -1 : duration * 1000;
+
+        if (duration == -1 && enableUltrasonic) {
+            Log.e(TAG, "Ultrasonic recording must have a duration, Disable in force");
+            enableUltrasonic = false;
+        }
+        this.enableUltrasonic = enableUltrasonic;
+
         File audioFile = new File(baseDir, outputFile);
         Log.i(TAG, "Recording file: " + audioFile.getAbsolutePath() + ", duration: " + durationMs);
         if (isCustom) {
@@ -45,6 +53,11 @@ public class ClientAudioHandler extends AbstractAudioHandler {
             recorder = new SimpleAudioRecorder(this, audioFile, audioSource, durationMs);
         }
         recorder.setListener(listener);
+
+        if (this.enableUltrasonic) {
+            player = new FrequencyPlayer(this, 20000, duration);
+            player.setListener(listener);
+        }
     }
 
     @Override

@@ -26,6 +26,7 @@ public abstract class AbstractAudioHandler {
     protected final File baseDir;
     protected AudioRecorder recorder;
     protected AudioPlayer player;
+    protected boolean enableUltrasonic;
 
     public AbstractAudioHandler(Context context, ExecutorService executor) {
         this.context = context;
@@ -42,6 +43,7 @@ public abstract class AbstractAudioHandler {
                                            int duration,
                                            boolean enableProcess,
                                            boolean isCustom,
+                                           boolean enableUltrasonic,
                                            AudioEventListener listener);
 
 
@@ -100,6 +102,9 @@ public abstract class AbstractAudioHandler {
 
     public void startRecorder() {
         if (recorder != null) {
+            if (player != null && enableUltrasonic) {
+                player.start();
+            }
             recorder.start();
         }
     }
@@ -107,17 +112,26 @@ public abstract class AbstractAudioHandler {
     public void stopRecorder() {
         if (recorder != null) {
             recorder.stop();
+            if (player != null && enableUltrasonic) {
+                player.stop();
+            }
         }
     }
 
     public void pauseRecorder() {
         if (recorder != null) {
             recorder.pause();
+            if (player != null && enableUltrasonic) {
+                player.pause();
+            }
         }
     }
 
     public void resumeRecorder() {
         if (recorder != null) {
+            if (player != null && enableUltrasonic) {
+                player.resume();
+            }
             recorder.resume();
         }
     }
