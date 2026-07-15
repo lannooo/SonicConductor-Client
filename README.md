@@ -1,24 +1,12 @@
-## SonicConductor Client (formerly AudioCenterClient)
+## SonicConductor (Client)
 
 SonicConductor Client is the device-side component of an audio experiment orchestration platform built for researchers.
 It connects smartphones/audio devices to a centralized control hub, enabling remote and coordinated recording/playback execution across multiple devices.
 
 This design helps transform complex multi-device acoustic experiments from manual, interruption-prone operations into reproducible control flows — reducing operational overhead, minimizing human interference, and improving recording quality.
+Hope this toolkit could be helpful for audio-related research/development ;)
 
-> This repository keeps all original documentation. The original README content is preserved below for full technical details.
-
----
-
-## Original Documentation (Preserved)
-
-## AudioCenter Toolkit (Client side)
-
-This is the client-side component of the AudioCenter Toolkit, which provides a flexible, efficient, and clean way to
-manage audio recording & playback with multiple mobile devices.
-
-Hope this toolkit could be helpful for audio-related research/development~
-
-The server side code could be found at [AudioCenter-Server](https://github.com/lannooo/AudioCenterServer)
+The server side code could be found at [SonicConductor Hub](https://github.com/lannooo/AudioCenterServer)
 
 ## Requirements
 - Android Studio
