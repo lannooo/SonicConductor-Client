@@ -6,7 +6,7 @@ It connects smartphones/audio devices to a centralized control hub, enabling rem
 This design helps transform complex multi-device acoustic experiments from manual, interruption-prone operations into reproducible control flows — reducing operational overhead, minimizing human interference, and improving recording quality.
 Hope this toolkit could be helpful for audio-related research/development ;)
 
-The server side code could be found at [SonicConductor Hub](https://github.com/lannooo/AudioCenterServer)
+The server side code could be found at [SonicConductor Hub](https://github.com/lannooo/SonicConductor-Hub)
 
 ## Requirements
 - Android Studio
