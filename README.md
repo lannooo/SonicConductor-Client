@@ -1,3 +1,16 @@
+## SonicConductor Client (formerly AudioCenterClient)
+
+SonicConductor Client is the device-side component of an audio experiment orchestration platform built for researchers.
+It connects smartphones/audio devices to a centralized control hub, enabling remote and coordinated recording/playback execution across multiple devices.
+
+This design helps transform complex multi-device acoustic experiments from manual, interruption-prone operations into reproducible control flows — reducing operational overhead, minimizing human interference, and improving recording quality.
+
+> This repository keeps all original documentation. The original README content is preserved below for full technical details.
+
+---
+
+## Original Documentation (Preserved)
+
 ## AudioCenter Toolkit (Client side)
 
 This is the client-side component of the AudioCenter Toolkit, which provides a flexible, efficient, and clean way to
