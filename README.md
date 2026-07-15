@@ -1,9 +1,11 @@
 ## SonicConductor (Client)
 
+[English](./README.md) | [简体中文](./README.zh-CN.md)
+
 SonicConductor Client is the device-side component of an audio experiment orchestration platform built for researchers.
 It connects smartphones/audio devices to a centralized control hub, enabling remote and coordinated recording/playback execution across multiple devices.
 
-This design helps transform complex multi-device acoustic experiments from manual, interruption-prone operations into reproducible control flows — reducing operational overhead, minimizing human interference, and improving recording quality.
+This design helps transform complex multi-device acoustic experiments from manual, interruption-prone operations into reproducible control flows — reducing operational overhead, minimizing human errors, and improving consistency and reliability of experiment outcomes.
 Hope this toolkit could be helpful for audio-related research/development ;)
 
 The server side code could be found at [SonicConductor Hub](https://github.com/lannooo/SonicConductor-Hub)
@@ -24,4 +26,3 @@ The server side code could be found at [SonicConductor Hub](https://github.com/l
 
 ### UI
 <img src="./resource/ui.jpg" width = "300" height = "600" align=center />
-
